@@ -1,4 +1,5 @@
 import http from 'http';
+import { pathToFileURL } from 'node:url';
 import { PORT, HOST, MODELS, WATERMARK, MOCK_PROVIDER, AUTH_PATH, GLM_BACKEND, resolveModel, requireProxyAuth } from './config.js';
 import { AccountManager } from './accounts.js';
 import { SessionStore } from './sessions.js';
@@ -79,4 +80,7 @@ async function router(req,res){
 }
 
 export const server=http.createServer(router);
-if (import.meta.url === `file://${process.argv[1]}`) server.listen(PORT, HOST, () => console.log(`FreeGLMKimiAPI ${HOST}:${PORT} mock=${MOCK_PROVIDER}`));
+// Use pathToFileURL so the "is main module" check matches import.meta.url on
+// Windows too (argv[1] uses backslashes + drive letter; a raw `file://` concat
+// never matches the file:/// URL, so the server silently never listened).
+if (import.meta.url === pathToFileURL(process.argv[1]).href) server.listen(PORT, HOST, () => console.log(`FreeGLMKimiAPI ${HOST}:${PORT} mock=${MOCK_PROVIDER}`));
