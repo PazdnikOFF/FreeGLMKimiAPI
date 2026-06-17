@@ -15,6 +15,9 @@
     "agent:all": "node scripts/agent_smoke.js all",
     "doctor": "node scripts/doctor.js",
     "smoke:zai": "node scripts/zai_real_smoke.js",
+    "auth": "node scripts/auth.js",
+    "auth:login": "node scripts/auth.js --login",
+    "auth:status": "node scripts/auth.js --status",
     "auth:from-curl": "node scripts/import_zai_curl.js",
     "auth:browser": "node scripts/zai_browser_auth.js"
   },

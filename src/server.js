@@ -1,5 +1,10 @@
 import http from 'http';
+import fs from 'fs';
+import readline from 'readline';
+import { spawnSync } from 'child_process';
 import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'url';
+import path from 'path';
 import { PORT, HOST, MODELS, WATERMARK, MOCK_PROVIDER, AUTH_PATH, GLM_BACKEND, resolveModel, requireProxyAuth } from './config.js';
 import { AccountManager } from './accounts.js';
 import { SessionStore } from './sessions.js';
@@ -9,6 +14,8 @@ import { ZaiProvider } from './providers/zai.js';
 import { mockComplete } from './mockProvider.js';
 import { parseToolCallsFromText, buildToolCallCompletion, usage } from './tooling.js';
 import { anthropicToOpenAI, openAIToAnthropic } from './anthropic.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const store=new SessionStore();
 const accountManager=new AccountManager({ authPath: AUTH_PATH, env: process.env, cooldownMs: Number(process.env.ACCOUNT_COOLDOWN_MS || 60_000) });
@@ -80,7 +87,55 @@ async function router(req,res){
 }
 
 export const server=http.createServer(router);
+
+function isTruthy(v) { return ['1','true','yes','on'].includes(String(v ?? '').toLowerCase()); }
+function ask(q) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise(res => rl.question(q, ans => { rl.close(); res(ans); }));
+}
+function hasAuthConfig() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(AUTH_PATH, 'utf8'));
+    return !!(raw.accounts?.length || raw.provider);
+  } catch { return false; }
+}
+function runAuthScript() {
+  const script = path.join(__dirname, '..', 'scripts', 'zai_browser_auth.js');
+  return spawnSync(process.execPath, [script], { stdio: 'inherit', env: process.env }).status === 0;
+}
+function printStatus() {
+  console.log(`\nFreeGLMKimiAPI  —  ${WATERMARK}`);
+  console.log(`Auth: ${hasAuthConfig() ? '✅ OK' : '❌ auth.json не найден'} (${AUTH_PATH})`);
+  console.log(`Mock: ${MOCK_PROVIDER}`);
+  console.log(`Модели: ${Object.keys(MODELS).join(', ')}`);
+}
+async function showStartupMenu() {
+  if (isTruthy(process.env.SKIP_ACCOUNT_MENU) || isTruthy(process.env.NON_INTERACTIVE)) return true;
+  while (true) {
+    printStatus();
+    console.log('\n=== Меню ===');
+    console.log(`ForgetMeAI: ${WATERMARK}`);
+    console.log('1 - Авторизоваться / обновить Z.ai login');
+    console.log('2 - Показать статус');
+    console.log('3 - Запустить сервер (по умолчанию)');
+    console.log('4 - Выход');
+    const choice = (await ask('Ваш выбор (Enter = 3): ')) || '3';
+    if (choice === '1') { runAuthScript(); }
+    else if (choice === '2') { printStatus(); await ask('\nНажмите Enter...'); }
+    else if (choice === '3') {
+      if (!MOCK_PROVIDER && !hasAuthConfig()) { console.log('Нужен auth.json. Запустите пункт 1 или: npm run auth:browser'); continue; }
+      return true;
+    } else { return false; }
+  }
+}
+
 // Use pathToFileURL so the "is main module" check matches import.meta.url on
 // Windows too (argv[1] uses backslashes + drive letter; a raw `file://` concat
 // never matches the file:/// URL, so the server silently never listened).
-if (import.meta.url === pathToFileURL(process.argv[1]).href) server.listen(PORT, HOST, () => console.log(`FreeGLMKimiAPI ${HOST}:${PORT} mock=${MOCK_PROVIDER}`));
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const shouldStart = await showStartupMenu();
+  if (!shouldStart) process.exit(0);
+  server.listen(PORT, HOST, () => {
+    console.log(`\nFreeGLMKimiAPI ${HOST}:${PORT}  mock=${MOCK_PROVIDER}  ${WATERMARK}`);
+  });
+}
