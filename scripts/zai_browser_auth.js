@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 /**
- * Z.ai browser auth — HTTP-сервер + SSH-туннель.
+ * Z.ai browser auth — HTTP-сервер + SSH-туннель + букмарклет.
  *
  * Запустите на сервере:
  *   node scripts/zai_browser_auth.js
  *
- * Скрипт выведет:
- *   1. Команду для SSH-туннеля (выполнить на своём ПК)
- *   2. Ссылку для открытия в браузере
+ * Скрипт выведет SSH-команду и ссылку. Откройте страницу, перетащите
+ * кнопку в закладки, войдите в Z.ai, кликните закладку — готово.
  *
  * ENV:
  *   AUTH_PATH         — путь к auth.json (default: ./auth.json)
@@ -27,32 +26,35 @@ const outPath = process.env.AUTH_PATH || path.join(ROOT, 'auth.json');
 const port = Number(process.env.ZAI_AUTH_PORT || 9335);
 const timeoutSec = Number(process.env.ZAI_AUTH_TIMEOUT || 300);
 
-const HTML = `<!DOCTYPE html>
+function buildHtml(p) {
+  const bookmarklet = `javascript:(function(){var t=localStorage.getItem('token');if(!t||!t.startsWith('eyJ')){alert('Токен не найден. Убедитесь, что вы вошли в аккаунт Z.ai.');return;}fetch('http://localhost:${p}/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})}).then(function(r){return r.json();}).then(function(d){if(d.ok){alert('\\u2705 Токен сохранён! '+d.id);}else{alert('Ошибка: '+(d.error||'?'));}}).catch(function(e){alert('Ошибка соединения с localhost:${p} — '+e.message);});})();`;
+
+  return `<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Z.ai Auth</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-  .card { background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 32px; max-width: 520px; width: 100%; }
-  h1 { font-size: 1.3rem; margin-bottom: 6px; color: #fff; }
-  .sub { color: #888; font-size: 0.85rem; margin-bottom: 24px; }
-  .step { display: flex; gap: 12px; margin-bottom: 18px; }
-  .num { background: #2a2a2a; border: 1px solid #444; border-radius: 50%; width: 28px; height: 28px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; color: #aaa; margin-top: 2px; }
-  .step-body p { font-size: 0.9rem; margin-bottom: 6px; }
-  .step-body code { background: #111; border: 1px solid #333; border-radius: 4px; padding: 2px 6px; font-size: 0.8rem; color: #7dd3fc; }
-  a.btn { display: inline-block; background: #1d4ed8; color: #fff; text-decoration: none; border-radius: 6px; padding: 8px 16px; font-size: 0.85rem; margin-top: 4px; }
-  a.btn:hover { background: #2563eb; }
-  textarea { width: 100%; background: #111; border: 1px solid #444; border-radius: 6px; color: #e0e0e0; padding: 10px; font-size: 0.8rem; font-family: monospace; resize: vertical; min-height: 70px; margin-top: 8px; }
-  textarea:focus { outline: none; border-color: #1d4ed8; }
-  button { background: #16a34a; color: #fff; border: none; border-radius: 6px; padding: 10px 24px; font-size: 0.9rem; cursor: pointer; width: 100%; margin-top: 12px; }
-  button:hover { background: #15803d; }
-  .msg { margin-top: 14px; padding: 10px 14px; border-radius: 6px; font-size: 0.85rem; display: none; }
-  .msg.ok { background: #14532d; border: 1px solid #16a34a; color: #86efac; display: block; }
-  .msg.err { background: #450a0a; border: 1px solid #dc2626; color: #fca5a5; display: block; }
-  .divider { border: none; border-top: 1px solid #2a2a2a; margin: 20px 0; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,sans-serif;background:#0f0f0f;color:#e0e0e0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+  .card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:14px;padding:32px;max-width:500px;width:100%}
+  h1{font-size:1.25rem;color:#fff;margin-bottom:4px}
+  .sub{color:#666;font-size:.8rem;margin-bottom:28px}
+  .step{display:flex;gap:14px;margin-bottom:22px}
+  .num{background:#222;border:1px solid #333;border-radius:50%;width:28px;height:28px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.75rem;color:#888;margin-top:1px}
+  .step-body{flex:1}
+  .step-body p{font-size:.875rem;line-height:1.5}
+  .step-body .hint{color:#666;font-size:.75rem;margin-top:4px}
+  a.zai-link{display:inline-flex;align-items:center;gap:6px;background:#1d4ed8;color:#fff;text-decoration:none;border-radius:7px;padding:8px 14px;font-size:.825rem;margin-top:8px}
+  a.zai-link:hover{background:#2563eb}
+  a.bookmarklet{display:inline-flex;align-items:center;gap:8px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:7px;padding:10px 16px;font-size:.875rem;cursor:grab;user-select:none;border:2px dashed #a78bfa;margin-top:8px}
+  a.bookmarklet:hover{background:#6d28d9}
+  .drag-hint{color:#a78bfa;font-size:.75rem;margin-top:6px}
+  .divider{border:none;border-top:1px solid #222;margin:4px 0 22px}
+  .status{margin-top:20px;padding:12px 16px;border-radius:8px;font-size:.85rem;display:none}
+  .status.ok{background:#14532d;border:1px solid #16a34a;color:#86efac;display:block}
+  .status.err{background:#450a0a;border:1px solid #dc2626;color:#fca5a5;display:block}
 </style>
 </head>
 <body>
@@ -63,62 +65,48 @@ const HTML = `<!DOCTYPE html>
   <div class="step">
     <div class="num">1</div>
     <div class="step-body">
-      <p>Откройте Z.ai и войдите в аккаунт</p>
-      <a class="btn" href="https://chat.z.ai" target="_blank">Открыть chat.z.ai ↗</a>
+      <p>Перетащите эту кнопку в <strong>панель закладок</strong> браузера:</p>
+      <a class="bookmarklet" href="${bookmarklet}">📋 Z.ai → сохранить токен</a>
+      <p class="drag-hint">↑ Тащите в закладки, не кликайте здесь</p>
     </div>
   </div>
 
   <div class="step">
     <div class="num">2</div>
     <div class="step-body">
-      <p>На вкладке Z.ai нажмите <strong>F12</strong> → <strong>Console</strong> и выполните:</p>
-      <code>copy(localStorage.getItem('token'))</code>
-      <p style="margin-top:6px;color:#888;font-size:0.8rem">Токен скопируется в буфер обмена.</p>
+      <p>Откройте Z.ai и войдите в аккаунт:</p>
+      <a class="zai-link" href="https://chat.z.ai" target="_blank">Открыть chat.z.ai ↗</a>
     </div>
   </div>
 
   <div class="step">
     <div class="num">3</div>
     <div class="step-body">
-      <p>Вставьте токен сюда и нажмите Сохранить:</p>
-      <textarea id="token" placeholder="eyJhbGciOi..."></textarea>
+      <p>На странице <strong>chat.z.ai</strong> нажмите закладку <em>«Z.ai → сохранить токен»</em>.</p>
+      <p class="hint">Токен будет отправлен на сервер автоматически.</p>
     </div>
   </div>
 
-  <button onclick="submit()">Сохранить токен</button>
-  <div class="msg" id="msg"></div>
+  <div class="divider"></div>
+  <div id="status" class="status"></div>
 </div>
 <script>
-async function submit() {
-  const token = document.getElementById('token').value.trim();
-  const msg = document.getElementById('msg');
-  msg.className = 'msg';
-  if (!token.startsWith('eyJ') || token.split('.').length !== 3) {
-    msg.className = 'msg err';
-    msg.textContent = 'Токен должен быть JWT (начинается с eyJ и содержит 3 части через точку)';
-    return;
-  }
-  try {
-    const r = await fetch('/save', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ token }) });
-    const data = await r.json();
-    if (data.ok) {
-      msg.className = 'msg ok';
-      msg.textContent = '✅ Токен сохранён! ' + (data.id ? 'Аккаунт: ' + data.id : '') + ' Можно закрыть вкладку.';
+// Долгий poll — сервер ответит {"done":true} когда токен получен
+(function poll(){
+  fetch('/status').then(r=>r.json()).then(d=>{
+    if(d.done){
+      var s=document.getElementById('status');
+      s.className='status ok';
+      s.textContent='\\u2705 Токен сохранён! Аккаунт: '+d.id+'. Можно закрыть вкладку.';
     } else {
-      msg.className = 'msg err';
-      msg.textContent = 'Ошибка: ' + (data.error || 'неизвестная');
+      setTimeout(poll, 2000);
     }
-  } catch(e) {
-    msg.className = 'msg err';
-    msg.textContent = 'Сетевая ошибка: ' + e.message;
-  }
-}
-document.getElementById('token').addEventListener('keydown', e => {
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit();
-});
+  }).catch(()=>setTimeout(poll,3000));
+})();
 </script>
 </body>
 </html>`;
+}
 
 function decodeJwt(token) {
   try {
@@ -161,14 +149,32 @@ async function readBody(req) {
 }
 
 async function main() {
-  let done = false;
+  let savedAccount = null;
+  const html = buildHtml(port);
 
   const server = http.createServer(async (req, res) => {
+    // CORS — нужен чтобы букмарклет на chat.z.ai мог достучаться до localhost
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+
     if (req.method === 'GET' && req.url === '/') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(HTML);
+      res.end(html);
       return;
     }
+
+    if (req.method === 'GET' && req.url === '/status') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      if (savedAccount) {
+        res.end(JSON.stringify({ done: true, id: savedAccount.id }));
+      } else {
+        res.end(JSON.stringify({ done: false }));
+      }
+      return;
+    }
+
     if (req.method === 'POST' && req.url === '/save') {
       const body = await readBody(req);
       const token = String(body.token || '').trim();
@@ -178,19 +184,19 @@ async function main() {
         return;
       }
       try {
-        const account = saveAuth(token);
+        savedAccount = saveAuth(token);
         console.log(`\n[auth] ✅ Токен сохранён: ${outPath}`);
-        console.log(`[auth] Аккаунт: ${account.id}`);
+        console.log(`[auth] Аккаунт: ${savedAccount.id}`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, id: account.id }));
-        done = true;
-        setTimeout(() => { server.close(); process.exit(0); }, 1500);
+        res.end(JSON.stringify({ ok: true, id: savedAccount.id }));
+        setTimeout(() => { server.close(); process.exit(0); }, 3000);
       } catch (e) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: e.message }));
       }
       return;
     }
+
     res.writeHead(404); res.end();
   });
 
@@ -204,14 +210,13 @@ async function main() {
     console.log(`\n   ssh -L ${port}:localhost:${port} ${sshUser}@${hostname}\n`);
     console.log('2. Откройте в браузере на своём ПК:');
     console.log(`\n   http://localhost:${port}\n`);
-    console.log('3. Войдите в Z.ai и вставьте токен на странице.');
+    console.log('3. Перетащите кнопку в закладки → войдите в Z.ai → кликните закладку.');
     console.log('======================================================');
     console.log(`Таймаут: ${timeoutSec}с. Ожидаю токен...\n`);
   });
 
-  // Таймаут
   setTimeout(() => {
-    if (!done) {
+    if (!savedAccount) {
       console.error(`[auth] Таймаут ${timeoutSec}с. Токен не получен.`);
       server.close();
       process.exit(2);
